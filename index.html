@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>국가 전쟁 & 문의 관리</title>
+<style>
+body { font-family: Arial; background: #e6f0ff; padding: 20px; }
+h1 { text-align: center; color: #003366; }
+.country, .inquiry { background: white; padding: 15px; margin: 10px auto; max-width: 600px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);}
+.admin-btn, .inquiry-btn { display: inline-block; margin: 0 10px; padding: 10px 15px; background: #0066cc; color: white; border-radius: 8px; cursor: pointer; }
+#adminPanel, #inquiryPanel { display: none; background: white; padding: 20px; max-width: 600px; margin: 20px auto; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+input, textarea, button { width: 100%; margin-top: 10px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+ul li button { margin-left: 10px; color: red; cursor: pointer; border:none; background:none; }
+</style>
+</head>
+<body>
+
+<h1>🌍 국가 점령 현황</h1>
+<div style="text-align:center;">
+  <div class="admin-btn" onclick="adminLogin()">관리자</div>
+  <div class="inquiry-btn" onclick="openInquiry()">문의</div>
+</div>
+
+<div id="countries"></div>
+
+<!-- 관리자 패널 -->
+<div id="adminPanel">
+    <h2>관리자 패널</h2>
+    <h3>국가 점령 관리</h3>
+    <input id="nation" placeholder="나라 이름 (예: 미국)">
+    <textarea id="lands" placeholder="점령한 나라들 (쉼표로 구분)"></textarea>
+    <button onclick="saveData()">저장</button>
+
+    <h3>문의 관리</h3>
+    <div id="inquiriesList"></div>
+</div>
+
+<!-- 문의 작성 패널 -->
+<div id="inquiryPanel">
+  <h2>문의 작성</h2>
+  <input id="inqNickname" placeholder="마인크래프트 닉네임" required>
+  <input id="inqRealname" placeholder="실명" required>
+  <textarea id="inqContent" placeholder="문의 내용" required></textarea>
+  <button onclick="submitInquiry()">문의 제출</button>
+</div>
+
+<script type="module">
+// Firebase v9 모듈
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getDatabase, ref, set, push, onValue, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCVQx91n67chn7SxFq16yXBkT5rMhG64Nk",
+  authDomain: "midcoreserver-c0631.firebaseapp.com",
+  databaseURL: "https://midcoreserver-c0631-default-rtdb.firebaseio.com",
+  projectId: "midcoreserver-c0631",
+  storageBucket: "midcoreserver-c0631.firebasestorage.app",
+  messagingSenderId: "690934370848",
+  appId: "1:690934370848:web:3f9b385fc293b5b7f36245",
+  measurementId: "G-RRTHVNS986"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let isAdmin = false;
+let lastCountryData = {};
+let lastInquiries = [];
+
+// ================= 국가 점령 관리 =================
+function adminLogin() {
+  const pw = prompt("관리자 비밀번호 입력");
+  if (pw === "suns0525") {
+    isAdmin = true;
+    document.getElementById("adminPanel").style.display = "block";
+    renderCountries(lastCountryData);
+    loadInquiries();
+    alert("관리자 모드 활성화");
+  } else alert("비밀번호 틀림");
+}
+window.adminLogin = adminLogin;
+
+function saveData() {
+  const nation = document.getElementById("nation").value.trim();
+  const lands = document.getElementById("lands").value.split(",").map(v=>v.trim()).filter(v=>v!=="");
+  if (!nation) { alert("나라 이름 입력"); return; }
+  set(ref(db, "occupation/" + nation), lands);
+  alert("저장 완료");
+}
+
+function removeLand(nation, land) {
+  if (!isAdmin) return;
+  const nationRef = ref(db, "occupation/" + nation);
+  onValue(nationRef, snapshot => {
+    let lands = snapshot.val() || [];
+    lands = lands.filter(l => l !== land);
+    set(nationRef, lands);
+  }, {onlyOnce:true});
+}
+
+// 실시간 점령 현황
+const countriesDiv = document.getElementById("countries");
+onValue(ref(db, "occupation"), snapshot => {
+  lastCountryData = snapshot.val() || {};
+  renderCountries(lastCountryData);
+});
+
+function renderCountries(data) {
+  countriesDiv.innerHTML = "";
+  for (const nation in data) {
+    const div = document.createElement("div");
+    div.className = "country";
+    let html = `<h3>${nation}</h3><ul>`;
+    if (data[nation].length===0) html += "<li>점령한 나라 없음</li>";
+    else {
+      data[nation].forEach(v=>{
+        html += `<li>${v}`;
+        if (isAdmin) html += ` <button onclick="removeLand('${nation}','${v}')">제거</button>`;
+        html += `</li>`;
+      });
+    }
+    html += "</ul>";
+    div.innerHTML = html;
+    countriesDiv.appendChild(div);
+  }
+}
+
+// ================= 문의 기능 =================
+function openInquiry() {
+  document.getElementById("inquiryPanel").style.display = "block";
+}
+window.openInquiry = openInquiry;
+
+function submitInquiry() {
+  const nickname = document.getElementById("inqNickname").value.trim();
+  const realname = document.getElementById("inqRealname").value.trim();
+  const content = document.getElementById("inqContent").value.trim();
+  if(!nickname || !realname || !content) { alert("모든 항목 입력 필요"); return; }
+
+  push(ref(db, "inquiries"), {nickname, realname, content, answer:"", timestamp:Date.now()});
+  alert("문의 제출 완료");
+  document.getElementById("inquiryPanel").reset?.(); // textarea reset
+}
+
+// 관리자: 문의 불러오기
+function loadInquiries() {
+  onValue(ref(db, "inquiries"), snapshot=>{
+    const data = snapshot.val() || {};
+    lastInquiries = data;
+    const container = document.getElementById("inquiriesList");
+    container.innerHTML = "";
+    for (const id in data) {
+      const inq = data[id];
+      const div = document.createElement("div");
+      div.className = "inquiry";
+      div.innerHTML = `
+        <b>${inq.nickname} (${inq.realname})</b><br>
+        ${inq.content}<br>
+        <b>답변:</b> <textarea id="ans-${id}">${inq.answer||""}</textarea>
+        <button onclick="saveAnswer('${id}')">답변 저장</button>
+      `;
+      container.appendChild(div);
+    }
+  });
+}
+
+function saveAnswer(id) {
+  const answerText = document.getElementById(`ans-${id}`).value.trim();
+  update(ref(db, "inquiries/" + id), {answer: answerText});
+  alert("답변 저장 완료");
+}
+window.saveAnswer = saveAnswer;
+
+</script>
+</body>
+</html>
